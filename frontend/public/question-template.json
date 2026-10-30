@@ -1,0 +1,28 @@
+{
+  "questions": [
+    {
+      "subject": "Data Structures & Algorithms",
+      "chapter": "Arrays",
+      "topic": "Array Basics",
+      "title": "Sum of Array",
+      "slug": "sum-of-array",
+      "difficulty": "EASY",
+      "tags": ["Arrays"],
+      "companies": ["TCS"],
+      "timeLimitMs": 2000,
+      "description": "Given an array of **n** integers, print their sum.",
+      "inputFormat": "First line: `n`. Second line: `n` integers.",
+      "outputFormat": "The sum.",
+      "constraints": "1 ≤ n ≤ 10^5, |a[i]| ≤ 10^9",
+      "hints": ["Add the numbers one by one.", "The sum can be larger than a 32-bit int."],
+      "editorial": "Loop once and add every element. Use a 64-bit integer. **O(n)**.",
+      "solutionLanguage": "python",
+      "solutionCode": "n = int(input())\nprint(sum(map(int, input().split()[:n])))\n",
+      "testCases": [
+        { "input": "3\n1 2 3", "expected": "6", "isSample": true, "explanation": "1 + 2 + 3 = 6" },
+        { "input": "1\n-5", "expected": "-5", "isSample": false },
+        { "input": "2\n1000000000 1000000000", "expected": "2000000000", "isSample": false }
+      ]
+    }
+  ]
+}

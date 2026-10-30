@@ -1,0 +1,4 @@
+.venv/
+MuseTalk/
+cache/
+__pycache__/

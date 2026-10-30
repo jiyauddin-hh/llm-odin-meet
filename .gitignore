@@ -1,0 +1,10 @@
+node_modules
+.next
+logs
+.env
+.env.local
+backend/certs/
+# Side-by-side website builds (staging and rollback)
+.next-*/
+# Course content lives in the database; it's imported from here but not kept in the repo
+content/

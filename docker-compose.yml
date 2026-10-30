@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: quantumcode-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quantum
+      POSTGRES_PASSWORD: quantum
+      POSTGRES_DB: quantumcode
+    ports:
+      - "127.0.0.1:5917:5432"
+    volumes:
+      - qc-db:/var/lib/postgresql/data
+
+volumes:
+  qc-db:

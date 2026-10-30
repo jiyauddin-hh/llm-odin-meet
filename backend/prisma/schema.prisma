@@ -1,0 +1,542 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  EDITOR
+  TEACHER
+  ADMIN
+}
+
+enum ClassroomStatus {
+  LIVE
+  ENDED
+}
+
+// Where an edited question stands. Null means no unpublished work.
+enum WorkStatus {
+  DRAFT
+  IN_REVIEW
+  REJECTED
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model User {
+  id              Int               @id @default(autoincrement())
+  username        String            @unique
+  email           String            @unique
+  passwordHash    String
+  name            String?
+  bio             String?
+  country         String?
+  avatarUrl       String?
+  role            Role              @default(USER)
+  // Per-user classroom overrides, e.g. {"cam": false}; missing keys follow the role default.
+  classPerms      Json?
+  createdAt       DateTime          @default(now())
+  submissions     Submission[]
+  solves          Solve[]
+  courseAccess    CourseAccess[]
+  requests        AccessRequest[]
+  progress        LessonProgress[]
+  quizScores      QuizScore[]
+  subjects        EditorSubject[]
+  revisions       ProblemRevision[]
+  moduleAccess    ModuleAccess[]
+  chapterRequests ChapterRequest[]
+  reelLikes       ReelLike[]
+  reelSaves       ReelSave[]
+  reels           Reel[]
+  liveTestEntries LiveTestEntry[]
+  classrooms      Classroom[]
+  quizzes         Quiz[]
+}
+
+model Problem {
+  id               Int               @id @default(autoincrement())
+  slug             String            @unique
+  title            String
+  description      String
+  inputFormat      String            @default("")
+  outputFormat     String            @default("")
+  constraints      String            @default("")
+  difficulty       Difficulty
+  tags             String[]
+  timeLimitMs      Int               @default(2000)
+  starterCode      Json?
+  published        Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  topicId          Int?
+  topic            Topic?            @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  companies        String[]
+  hints            String[]
+  editorial        String            @default("")
+  solutionLanguage String            @default("python")
+  solutionCode     String            @default("")
+  // Editing workflow. `draft` holds the working copy (same shape as the editor
+  // form) until an admin approves it into the live fields above.
+  workflow         WorkStatus?
+  draft            Json?
+  reviewComment    String?
+  approvedAt       DateTime?
+  updatedAt        DateTime          @default(now()) @updatedAt
+  testCases        TestCase[]
+  submissions      Submission[]
+  solves           Solve[]
+  revisions        ProblemRevision[]
+
+  @@index([topicId])
+}
+
+model Subject {
+  id       Int             @id @default(autoincrement())
+  name     String          @unique
+  icon     String          @default("📚")
+  order    Int             @default(0)
+  chapters Chapter[]
+  editors  EditorSubject[]
+}
+
+model Chapter {
+  id        Int     @id @default(autoincrement())
+  subjectId Int
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  name      String
+  order     Int     @default(0)
+  topics    Topic[]
+
+  @@index([subjectId])
+}
+
+model Topic {
+  id        Int       @id @default(autoincrement())
+  chapterId Int
+  chapter   Chapter   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  name      String
+  order     Int       @default(0)
+  problems  Problem[]
+  reels     Reel[]
+
+  @@index([chapterId])
+}
+
+// Which subjects an editor may write questions for.
+model EditorSubject {
+  userId    Int
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId Int
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@id([userId, subjectId])
+}
+
+// Edit history: a snapshot of the question after each action.
+model ProblemRevision {
+  id        Int      @id @default(autoincrement())
+  problemId Int
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  comment   String?
+  snapshot  Json
+  createdAt DateTime @default(now())
+
+  @@index([problemId, createdAt])
+}
+
+model TestCase {
+  id          Int     @id @default(autoincrement())
+  problemId   Int
+  problem     Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  input       String
+  expected    String
+  isSample    Boolean @default(false)
+  explanation String?
+  order       Int     @default(0)
+
+  @@index([problemId])
+}
+
+model Submission {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId     Int
+  problem       Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  language      String
+  code          String
+  verdict       String
+  passed        Int      @default(0)
+  total         Int      @default(0)
+  runtimeMs     Int?
+  memoryKb      Int?
+  results       Json?
+  compileOutput String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([problemId])
+}
+
+// One row per user per problem, written on the first accepted submission.
+model Solve {
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId Int
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  points    Int
+  solvedAt  DateTime @default(now())
+
+  @@id([userId, problemId])
+  @@index([solvedAt])
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Course {
+  id          Int             @id @default(autoincrement())
+  slug        String          @unique
+  title       String
+  description String          @default("")
+  level       String          @default("Beginner")
+  icon        String          @default("📘")
+  published   Boolean         @default(true)
+  order       Int             @default(0)
+  createdAt   DateTime        @default(now())
+  modules     CourseModule[]
+  access      CourseAccess[]
+  requests    AccessRequest[]
+}
+
+// How a chapter opens for users without whole-course access.
+enum ModuleUnlock {
+  PERMISSION // an admin gives it
+  FREE // free preview for anyone logged in
+  AUTO // opens once the previous chapter is completed
+}
+
+model CourseModule {
+  id         Int              @id @default(autoincrement())
+  courseId   Int
+  course     Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title      String
+  order      Int              @default(0)
+  unlockMode ModuleUnlock     @default(PERMISSION)
+  lessons    Lesson[]
+  access     ModuleAccess[]
+  requests   ChapterRequest[]
+
+  @@index([courseId])
+}
+
+// Access to one chapter (module) of a course.
+model ModuleAccess {
+  userId    Int
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moduleId  Int
+  module    CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  grantedAt DateTime     @default(now())
+  expiresAt DateTime?
+
+  @@id([userId, moduleId])
+}
+
+model ChapterRequest {
+  id        Int           @id @default(autoincrement())
+  userId    Int
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moduleId  Int
+  module    CourseModule  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  status    RequestStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+  decidedAt DateTime?
+
+  @@unique([userId, moduleId])
+}
+
+model Lesson {
+  id         Int              @id @default(autoincrement())
+  moduleId   Int
+  module     CourseModule     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title      String
+  content    String           @default("")
+  videoUrl   String?
+  problemIds Int[]
+  // Quick check at the end: [{ question, options[], answer (index), explanation }]
+  quiz       Json?
+  order      Int              @default(0)
+  progress   LessonProgress[]
+  quizScores QuizScore[]
+  aiClasses  AiClass[]
+
+  @@index([moduleId])
+}
+
+// A user may open a course while a row exists and it hasn't expired.
+model CourseAccess {
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId  Int
+  course    Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  grantedAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  @@id([userId, courseId])
+}
+
+model AccessRequest {
+  id        Int           @id @default(autoincrement())
+  userId    Int
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId  Int
+  course    Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  status    RequestStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+  decidedAt DateTime?
+
+  @@unique([userId, courseId])
+}
+
+model LessonProgress {
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId    Int
+  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  completedAt DateTime @default(now())
+
+  @@id([userId, lessonId])
+}
+
+// A learner's best result on a lesson's quiz.
+model QuizScore {
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId  Int
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  best      Int
+  total     Int
+  attempts  Int      @default(1)
+  updatedAt DateTime @updatedAt
+
+  @@id([userId, lessonId])
+}
+
+enum ReelKind {
+  ANIMATION // built from template steps, animated by the website
+  VIDEO // uploaded file or YouTube link
+}
+
+enum RenderStatus {
+  NONE
+  QUEUED
+  RENDERING
+  READY
+  FAILED
+}
+
+// Site-wide settings, e.g. who may download reels.
+model Setting {
+  key   String @id
+  value String
+}
+
+enum ReelStatus {
+  DRAFT
+  IN_REVIEW
+  PUBLISHED
+  REJECTED
+}
+
+// A short concept explainer shown in the Reels feed.
+model Reel {
+  id            Int          @id @default(autoincrement())
+  slug          String       @unique
+  title         String
+  description   String       @default("")
+  topicId       Int?
+  topic         Topic?       @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  practiceSlug  String?
+  kind          ReelKind
+  animation     Json?
+  videoUrl      String?
+  status        ReelStatus   @default(DRAFT)
+  reviewComment String?
+  views         Int          @default(0)
+  createdById   Int?
+  createdBy     User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now()) @updatedAt
+  publishedAt   DateTime?
+  // Download as MP4. Animated reels are rendered to a file once per version.
+  allowDownload Boolean      @default(true)
+  downloads     Int          @default(0)
+  renderStatus  RenderStatus @default(NONE)
+  renderHash    String?
+  renderUrl     String?
+  renderError   String?
+  renderedAt    DateTime?
+  // Voice-over made with the offline neural voice: { hash, intro, steps[], outro }
+  // where each part is { url, ms }.
+  narration     Json?
+  likes         ReelLike[]
+  saves         ReelSave[]
+
+  @@index([status, publishedAt])
+  @@index([topicId])
+}
+
+model ReelLike {
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reelId    Int
+  reel      Reel     @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, reelId])
+}
+
+model ReelSave {
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reelId    Int
+  reel      Reel     @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, reelId])
+}
+
+// The daily live test: everyone takes the same MCQs in the same window
+// (default 5:30 PM IST for 10 minutes) and the top 3 become "Performers of the Day".
+model LiveTest {
+  id          Int             @id @default(autoincrement())
+  title       String
+  topic       String          @default("")
+  startsAt    DateTime
+  durationMin Int             @default(10)
+  // [{ question, code?, options[], answer (index), explanation }]
+  questions   Json
+  createdAt   DateTime        @default(now())
+  entries     LiveTestEntry[]
+
+  @@index([startsAt])
+}
+
+// A student's place in a live test. Created when they tap "I'm in" (readyAt)
+// or join; startedAt is set on joining, so there is one attempt per student.
+model LiveTestEntry {
+  testId      Int
+  test        LiveTest  @relation(fields: [testId], references: [id], onDelete: Cascade)
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readyAt     DateTime  @default(now())
+  startedAt   DateTime?
+  // This student's shuffle: [{ q: original question index, o: [original option index, ...] }]
+  order       Json?
+  // { [original question index]: original option index }
+  answers     Json?
+  submittedAt DateTime?
+  score       Int?
+  timeMs      Int?
+
+  @@id([testId, userId])
+  @@index([testId, score])
+}
+
+// A live teaching room. The teacher's editor and terminal are streamed to
+// everyone who joins with the code; the teacher can hand the pen to one
+// student at a time. Presence and the run log live in memory
+// (src/lib/classroom.js); only the code and the last editor text persist.
+model Classroom {
+  id        Int             @id @default(autoincrement())
+  code      String          @unique
+  title     String
+  teacherId Int
+  teacher   User            @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  language  String          @default("python")
+  content   String          @default("")
+  stdin     String          @default("")
+  status    ClassroomStatus @default(LIVE)
+  createdAt DateTime        @default(now())
+  endedAt   DateTime?
+  aiClass   AiClass?
+
+  @@index([teacherId, status])
+}
+
+enum AiClassStatus {
+  PREPARING // writing the lesson script and rendering the teacher's voice and face
+  READY // students can join and wait; teaching starts at startsAt
+  LIVE
+  ENDED
+  FAILED
+}
+
+// The daily class taught by the AI teacher (src/lib/aiTeacher). It runs in a
+// normal Classroom whose host is the AI teacher's account; the script, what
+// students asked and how it ended are kept here.
+model AiClass {
+  id          Int           @id @default(autoincrement())
+  title       String
+  lessonId    Int?
+  lesson      Lesson?       @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  classroomId Int?          @unique
+  classroom   Classroom?    @relation(fields: [classroomId], references: [id], onDelete: SetNull)
+  startsAt    DateTime
+  status      AiClassStatus @default(PREPARING)
+  // { greeting, segments: [{ say, action, code, wait, ... }], homework }
+  plan        Json?
+  // [{ at, by, text, answer }]
+  questions   Json?
+  error       String?
+  createdAt   DateTime      @default(now())
+  endedAt     DateTime?
+
+  @@index([startsAt])
+}
+
+enum QuizStatus {
+  DRAFT
+  LIVE
+  ENDED
+}
+
+// A KBC-style live quiz (src/lib/quiz.js). The host runs it question by
+// question; players answer on their own screens and the fastest correct
+// answers score most. The game itself runs in memory; the final ranking is
+// saved in results. A quiz can be run again (results are replaced).
+model Quiz {
+  id        Int        @id @default(autoincrement())
+  title     String
+  hostId    Int
+  host      User       @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  // [{ question, code?, options[], answer (index), explanation }]
+  questions Json       @default("[]")
+  timeSec   Int        @default(20)
+  // Join code while the quiz is live
+  code      String?    @unique
+  status    QuizStatus @default(DRAFT)
+  // [{ rank, userId, username, name, avatarUrl, score, correct }]
+  results   Json?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  startedAt DateTime?
+  endedAt   DateTime?
+
+  @@index([hostId])
+}
